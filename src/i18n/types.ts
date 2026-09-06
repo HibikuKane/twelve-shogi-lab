@@ -1,0 +1,38 @@
+import type { PieceKind, Player } from "../core/model";
+
+export type Locale = "ko" | "ja" | "en";
+
+// All languages must provide the same keys and parameter types.
+export interface Messages {
+  title: string;
+  description: string;
+  mode: string;
+  language: string;
+  restart: string;
+  restartQuestion: string;
+  cancel: string;
+  helpTitle: string;
+  help: readonly string[];
+  selectHint: string;
+  noTargets: string;
+  dropHint: string;
+  emptyHand: string;
+  emptySquare: string;
+  boardLabel: string;
+  sides: Record<Player, string>;
+  pieces: Record<PieceKind, string>;
+  movement: Record<PieceKind, string>;
+  reasons: Record<"capture" | "try" | "no-actions", string>;
+  draw: string;
+  turn: (side: string, move: number) => string;
+  win: (side: string, reason: string) => string;
+  hand: (side: string) => string;
+  place: (piece: string) => string;
+  square: (row: number, column: number, occupant: string, legal: boolean) => string;
+  selected: (piece: string) => string;
+  start: (side: string) => string;
+  moved: (side: string, piece: string) => string;
+  captured: (side: string, piece: string, target: string) => string;
+  dropped: (side: string, piece: string) => string;
+  promotion: string;
+}

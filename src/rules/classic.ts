@@ -106,9 +106,10 @@ function executeAction(state: GameState, action: GameAction): GameState {
       ...state,
       board,
       hands,
-      lastEvent: captured
-        ? `${moving.kind}가 ${captured.kind}를 잡았다.`
-        : `${moving.kind}가 이동했다.`,
+      lastEvent: {
+        type: "move", player: moving.owner, piece: moving.kind,
+        captured: captured?.kind ?? null, promoted: promoted.kind !== moving.kind,
+      },
     };
   }
 
@@ -122,7 +123,7 @@ function executeAction(state: GameState, action: GameAction): GameState {
     ...state,
     board,
     hands,
-    lastEvent: `${dropped.kind}를 판에 다시 놓았다.`,
+    lastEvent: { type: "drop", player: dropped.owner, piece: dropped.kind },
   };
 }
 
@@ -193,7 +194,7 @@ export function createClassicState(): GameState {
     result: { type: "playing" },
     history: [],
     moveNumber: 1,
-    lastEvent: "남쪽 차례로 실험을 시작한다.",
+    lastEvent: { type: "start", player: "south" },
   };
   return { ...state, history: [positionKey(state)] };
 }
@@ -218,7 +219,7 @@ export function applyClassicAction(state: GameState, action: GameAction): GameSt
     return {
       ...moved,
       result: { type: "win", winner: state.turn, reason: "capture" },
-      lastEvent: `${state.turn}이 상대 사자를 잡아 승리했다.`,
+      lastEvent: { type: "win", winner: state.turn, reason: "capture" },
     };
   }
 
@@ -230,7 +231,7 @@ export function applyClassicAction(state: GameState, action: GameAction): GameSt
     return {
       ...moved,
       result: { type: "win", winner: state.turn, reason: "try" },
-      lastEvent: `${state.turn}의 사자가 안전하게 끝줄에 도달했다.`,
+      lastEvent: { type: "win", winner: state.turn, reason: "try" },
     };
   }
 
@@ -249,7 +250,7 @@ export function applyClassicAction(state: GameState, action: GameAction): GameSt
       ...advanced,
       history,
       result: { type: "win", winner: state.turn, reason: "no-actions" },
-      lastEvent: "상대에게 사자를 지킬 수 있는 수가 없어 대국을 종료했다.",
+      lastEvent: { type: "win", winner: state.turn, reason: "no-actions" },
     };
   }
 
@@ -258,7 +259,7 @@ export function applyClassicAction(state: GameState, action: GameAction): GameSt
       ...advanced,
       history,
       result: { type: "draw", reason: "repetition" },
-      lastEvent: "같은 국면이 세 번 반복되어 무승부다.",
+      lastEvent: { type: "draw", reason: "repetition" },
     };
   }
 

@@ -1,257 +1,198 @@
 import {
-  BOARD_COLUMNS,
-  BOARD_ROWS,
-  fromIndex,
-  samePosition,
-  toIndex,
-  type GameAction,
-  type GameState,
-  type Piece,
-  type PieceKind,
-  type Player,
-  type Position,
-  type Selection,
+  fromIndex, samePosition, toIndex,
+  type GameAction, type GameState, type Piece, type PieceKind,
+  type Player, type Position, type Selection,
 } from "../core/model";
 import type { Ruleset } from "../core/ruleset";
-import { experimentCatalog } from "../experiments/catalog";
 import { classicRuleset } from "../rules/classic";
+import {
+  dictionaries, formatEvent, isLocale, loadLocale, localeNames, saveLocale,
+  type Locale, type Messages,
+} from "../i18n";
 
-const PIECE_INFO: Record<PieceKind, { readonly glyph: string; readonly ko: string }> = {
-  lion: { glyph: "🦁", ko: "사자" },
-  giraffe: { glyph: "🦒", ko: "기린" },
-  elephant: { glyph: "🐘", ko: "코끼리" },
-  chick: { glyph: "🐣", ko: "병아리" },
-  hen: { glyph: "🐔", ko: "닭" },
+const GLYPHS: Record<PieceKind, string> = {
+  lion: "🦁", giraffe: "🦒", elephant: "🐘", chick: "🐣", hen: "🐔",
 };
 
-const PLAYER_LABEL: Record<Player, string> = {
-  north: "북쪽",
-  south: "남쪽",
-};
-
-function pieceMarkup(candidate: Piece): string {
-  const info = PIECE_INFO[candidate.kind];
-  return `
-    <span class="piece piece--${candidate.owner}" aria-hidden="true">
-      <span class="piece__glyph">${info.glyph}</span>
-      <span class="piece__name">${info.ko}</span>
-    </span>
-  `;
-}
-
-function actionForTarget(actions: ReadonlyArray<GameAction>, target: Position): GameAction | undefined {
-  return actions.find((action) => samePosition(action.to, target));
+function escape(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]!);
 }
 
 export class LabApp {
-  private readonly root: HTMLElement;
   private readonly ruleset: Ruleset = classicRuleset;
   private state: GameState = this.ruleset.createInitialState();
   private selection: Selection | null = null;
+  private locale: Locale = loadLocale(navigator.languages, () => window.localStorage);
+  private confirmRestart = false;
 
-  constructor(root: HTMLElement) {
-    this.root = root;
+  constructor(private readonly root: HTMLElement) {
+    this.root.addEventListener("click", (event) => this.handleClick(event));
+    this.root.addEventListener("change", (event) => {
+      const select = event.target;
+      if (!(select instanceof HTMLSelectElement) || select.id !== "language" || !isLocale(select.value)) return;
+      this.locale = select.value;
+      saveLocale(this.locale, () => window.localStorage);
+      this.render();
+    });
     this.render();
   }
 
+  private get messages(): Messages { return dictionaries[this.locale]; }
+
   private selectedActions(): ReadonlyArray<GameAction> {
-    if (!this.selection) return [];
+    const selection = this.selection;
+    if (!selection) return [];
     return this.ruleset.legalActions(this.state).filter((action) => {
-      if (this.selection?.type === "board" && action.type === "move") {
-        return samePosition(this.selection.position, action.from);
-      }
-      if (this.selection?.type === "hand" && action.type === "drop") {
-        return (
-          action.player === this.selection.player &&
-          action.handIndex === this.selection.index
-        );
-      }
-      return false;
+      if (selection.type === "board" && action.type === "move") return samePosition(selection.position, action.from);
+      return selection.type === "hand" && action.type === "drop"
+        && selection.player === action.player && selection.index === action.handIndex;
     });
   }
 
   private selectBoard(position: Position): void {
-    if (this.state.result.type !== "playing") return;
-    const selectedActions = this.selectedActions();
-    const chosen = actionForTarget(selectedActions, position);
-    if (chosen) {
-      this.state = this.ruleset.applyAction(this.state, chosen);
+    if (this.state.result.type !== "playing" || this.confirmRestart) return;
+    const action = this.selectedActions().find((candidate) => samePosition(candidate.to, position));
+    if (action) {
+      this.state = this.ruleset.applyAction(this.state, action);
       this.selection = null;
-      this.render();
-      return;
+    } else {
+      const piece = this.state.board[toIndex(position)];
+      this.selection = piece?.owner === this.state.turn ? { type: "board", position } : null;
     }
-
-    const candidate = this.state.board[toIndex(position)];
-    this.selection = candidate?.owner === this.state.turn
-      ? { type: "board", position }
-      : null;
     this.render();
   }
 
-  private selectHand(player: Player, index: number): void {
-    if (player !== this.state.turn || this.state.result.type !== "playing") return;
-    this.selection = { type: "hand", player, index };
-    this.render();
+  private handleClick(event: MouseEvent): void {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLButtonElement>("button");
+    if (!button || button.disabled) return;
+    if (button.hasAttribute("data-reset")) {
+      this.confirmRestart = this.state.moveNumber > 1 && this.state.result.type === "playing";
+      if (!this.confirmRestart) this.reset();
+      else this.render();
+    } else if (button.hasAttribute("data-confirm-reset")) {
+      this.reset();
+    } else if (button.hasAttribute("data-cancel-reset")) {
+      this.confirmRestart = false;
+      this.render();
+    } else if (button.dataset.cell !== undefined) {
+      this.selectBoard(fromIndex(Number(button.dataset.cell)));
+    } else if (button.dataset.handPlayer && !this.confirmRestart && this.state.result.type === "playing") {
+      const player = button.dataset.handPlayer as Player;
+      if (player !== this.state.turn) return;
+      this.selection = { type: "hand", player, index: Number(button.dataset.handIndex) };
+      this.render();
+    }
   }
 
   private reset(): void {
     this.state = this.ruleset.createInitialState();
     this.selection = null;
+    this.confirmRestart = false;
     this.render();
   }
 
   private resultText(): string {
-    if (this.state.result.type === "playing") {
-      return `${PLAYER_LABEL[this.state.turn]} 차례 · ${this.state.moveNumber}수`;
-    }
-    if (this.state.result.type === "draw") return "무승부 · 반복 국면";
-    const reason = { capture: "사자 포획", try: "트라이", "no-actions": "상대 합법 수 없음" }[this.state.result.reason];
-    return `${PLAYER_LABEL[this.state.result.winner]} 승리 · ${reason}`;
+    const { result, turn, moveNumber } = this.state;
+    const m = this.messages;
+    if (result.type === "playing") return m.turn(m.sides[turn], moveNumber);
+    if (result.type === "draw") return m.draw;
+    return m.win(m.sides[result.winner], m.reasons[result.reason]);
+  }
+
+  private pieceMarkup(piece: Piece): string {
+    return `<span class="piece piece--${piece.owner}" aria-hidden="true">
+      <span class="piece__glyph">${GLYPHS[piece.kind]}</span>
+      <span class="piece__name">${escape(this.messages.pieces[piece.kind])}</span>
+    </span>`;
   }
 
   private renderHand(player: Player): string {
-    const pieces = this.state.hands[player];
-    const content = pieces.length === 0
-      ? `<span class="hand__empty">잡은 말 없음</span>`
-      : pieces.map((candidate, index) => {
-          const selected =
-            this.selection?.type === "hand" &&
-            this.selection.player === player &&
-            this.selection.index === index;
-          return `
-            <button
-              class="hand-piece${selected ? " is-selected" : ""}"
-              data-hand-player="${player}"
-              data-hand-index="${index}"
-              aria-label="${PIECE_INFO[candidate.kind].ko}를 판에 놓기"
-              ${player !== this.state.turn ? "disabled" : ""}
-            >${pieceMarkup(candidate)}</button>
-          `;
-        }).join("");
-
-    return `
-      <section class="hand hand--${player}" aria-label="${PLAYER_LABEL[player]}이 잡은 말">
-        <span class="hand__label">${PLAYER_LABEL[player]}의 손</span>
-        <div class="hand__pieces">${content}</div>
-      </section>
-    `;
+    const m = this.messages;
+    const label = m.hand(m.sides[player]);
+    const content = this.state.hands[player].map((piece, index) => {
+      const selected = this.selection?.type === "hand" && this.selection.player === player && this.selection.index === index;
+      const disabled = player !== this.state.turn || this.state.result.type !== "playing" || this.confirmRestart;
+      return `<button class="hand-piece${selected ? " is-selected" : ""}"
+        data-hand-player="${player}" data-hand-index="${index}" data-focus="hand-${player}-${index}"
+        aria-label="${escape(m.place(m.pieces[piece.kind]))}" aria-pressed="${selected}" ${disabled ? "disabled" : ""}>
+        ${this.pieceMarkup(piece)}</button>`;
+    }).join("") || `<span class="hand__empty">${escape(m.emptyHand)}</span>`;
+    return `<section class="hand hand--${player}" aria-label="${escape(label)}">
+      <span class="hand__label">${escape(label)}</span><div class="hand__pieces">${content}</div></section>`;
   }
 
   private renderBoard(): string {
-    const legalTargets = this.selectedActions();
-    const cells = Array.from({ length: BOARD_ROWS * BOARD_COLUMNS }, (_value, index) => {
+    const m = this.messages;
+    const actions = this.selectedActions();
+    const cells = this.state.board.map((piece, index) => {
       const position = fromIndex(index);
-      const candidate = this.state.board[index];
-      const selected =
-        this.selection?.type === "board" &&
-        samePosition(this.selection.position, position);
-      const targetAction = actionForTarget(legalTargets, position);
-      const isCapture = Boolean(targetAction && candidate);
-      const classes = [
-        "board__cell",
-        selected ? "is-selected" : "",
-        targetAction ? "is-legal" : "",
-        isCapture ? "is-capture" : "",
-      ].filter(Boolean).join(" ");
-      const label = candidate
-        ? `${PLAYER_LABEL[candidate.owner]} ${PIECE_INFO[candidate.kind].ko}`
-        : "빈 칸";
-
-      return `
-        <button
-          class="${classes}"
-          data-row="${position.row}"
-          data-column="${position.column}"
-          aria-label="${position.row + 1}행 ${position.column + 1}열, ${label}"
-        >${candidate ? pieceMarkup(candidate) : ""}</button>
-      `;
+      const selected = this.selection?.type === "board" && samePosition(this.selection.position, position);
+      const legal = actions.some((action) => samePosition(action.to, position));
+      const occupant = piece ? `${m.sides[piece.owner]} ${m.pieces[piece.kind]}` : m.emptySquare;
+      const label = m.square(position.row + 1, position.column + 1, occupant, legal);
+      return `<button class="board__cell${selected ? " is-selected" : ""}${legal ? " is-legal" : ""}${legal && piece ? " is-capture" : ""}"
+        data-cell="${index}" data-focus="cell-${index}" aria-label="${escape(label)}" aria-pressed="${Boolean(selected)}"
+        ${this.confirmRestart || this.state.result.type !== "playing" ? "disabled" : ""}>
+        ${piece ? this.pieceMarkup(piece) : ""}</button>`;
     }).join("");
-
-    return `<div class="board" role="group" aria-label="3열 4행 십이장기 판">${cells}</div>`;
+    return `<div class="board" role="group" aria-label="${escape(m.boardLabel)}">${cells}</div>`;
   }
 
-  private renderExperiments(): string {
-    return experimentCatalog.map((entry) => `
-      <article class="experiment-card experiment-card--${entry.status}">
-        <div class="experiment-card__topline">
-          <span>${entry.name}</span>
-          <span class="status-chip">${entry.status === "playable" ? "PLAYABLE" : "QUEUED"}</span>
-        </div>
-        <p>${entry.question}</p>
-      </article>
-    `).join("");
+  private selectionHint(): string {
+    const m = this.messages;
+    const selection = this.selection;
+    if (!selection) return `<p>${escape(m.selectHint)}</p>`;
+    const piece = selection.type === "board"
+      ? this.state.board[toIndex(selection.position)] : this.state.hands[selection.player][selection.index];
+    if (!piece) return "";
+    const hint = this.selectedActions().length === 0 ? m.noTargets
+      : selection.type === "hand" ? m.dropHint : m.movement[piece.kind];
+    return `<strong>${escape(m.selected(m.pieces[piece.kind]))}</strong><p>${escape(hint)}</p>`;
   }
 
   private render(): void {
-    this.root.innerHTML = `
-      <main class="shell">
-        <header class="hero">
-          <p class="eyebrow">TWELVE SHOGI LAB · EXPERIMENT 00</p>
-          <h1>작은 판에서<br /><em>규칙을 부순다.</em></h1>
-          <p class="hero__copy">
-            십이장기를 기준점으로 삼아 HP, 장비, 융합을 하나씩 끼워 보고
-            재미없으면 안전하게 버리는 로그라이크 실험실.
-          </p>
-        </header>
-
-        <section class="workbench">
-          <aside class="brief">
-            <span class="brief__number">00</span>
-            <p class="eyebrow">CURRENT RULESET</p>
-            <h2>${this.ruleset.name}</h2>
-            <p>${this.ruleset.summary}</p>
-            <dl class="rules-list">
-              <div><dt>판</dt><dd>3 × 4</dd></div>
-              <div><dt>승리</dt><dd>사자 포획 / 안전한 트라이</dd></div>
-              <div><dt>핵심</dt><dd>잡은 말을 내 편으로 재투입</dd></div>
-            </dl>
-            <p class="tip">로컬 2인 테스트판 · 양쪽을 직접 조작한다. 말을 누르면 갈 수 있는 칸이 빛난다. 잡은 말은 손패에서 골라 빈 칸에 놓는다.</p>
-          </aside>
-
-          <section class="game" aria-live="polite">
-            <div class="game__status">
-              <div>
-                <span class="game__turn">${this.resultText()}</span>
-                <p>${this.state.lastEvent}</p>
-              </div>
-              <button class="reset-button" data-reset>다시 시작</button>
-            </div>
-            ${this.renderHand("north")}
-            ${this.renderBoard()}
-            ${this.renderHand("south")}
-          </section>
+    const m = this.messages;
+    const focused = document.activeElement?.getAttribute("data-focus");
+    const helpOpen = this.root.querySelector<HTMLDetailsElement>("details")?.open ?? false;
+    document.documentElement.lang = this.locale;
+    document.title = `${m.title} · Twelve Shogi Lab`;
+    document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute("content", m.description);
+    this.root.innerHTML = `<main class="shell">
+      <header class="topbar">
+        <div><p class="brand">TWELVE SHOGI LAB</p><h1>${escape(m.title)}</h1><p class="mode">${escape(m.mode)}</p></div>
+        <div class="language-control"><label for="language">${escape(m.language)}</label>
+          <select id="language" data-focus="language">${Object.entries(localeNames).map(([locale, name]) =>
+            `<option value="${locale}" lang="${locale}" ${locale === this.locale ? "selected" : ""}>${name}</option>`).join("")}</select>
+        </div>
+      </header>
+      <div class="play-layout">
+        <section class="game" aria-label="${escape(m.title)}">
+          <div class="game__status"><div role="status" aria-live="polite" aria-atomic="true">
+            <h2 class="game__turn">${escape(this.resultText())}</h2>
+            <p class="game__event">${escape(formatEvent(this.state.lastEvent, m))}</p>
+          </div><button class="reset-button" data-reset data-focus="reset">${escape(m.restart)}</button></div>
+          ${this.confirmRestart ? `<section class="restart-prompt" aria-label="${escape(m.restartQuestion)}">
+            <p>${escape(m.restartQuestion)}</p><div>
+              <button data-cancel-reset data-focus="cancel-reset">${escape(m.cancel)}</button>
+              <button data-confirm-reset data-focus="confirm-reset">${escape(m.restart)}</button>
+            </div></section>` : ""}
+          ${this.renderHand("north")}${this.renderBoard()}${this.renderHand("south")}
+          <div class="selection-hint" aria-live="polite">${this.state.result.type === "playing" ? this.selectionHint() : `<p>${escape(this.resultText())}</p>`}</div>
         </section>
-
-        <section class="queue">
-          <div class="queue__heading">
-            <p class="eyebrow">TEST QUEUE</p>
-            <h2>한 번에 큰 질문 하나.</h2>
-          </div>
-          <div class="experiment-grid">${this.renderExperiments()}</div>
-        </section>
-
-        <footer>
-          <span>HIBIKUKANE / TWELVE-SHOGI-LAB</span>
-          <span>BUILD SMALL · LEARN FAST · KEEP THE WEIRD</span>
-        </footer>
-      </main>
-    `;
-
-    this.root.querySelectorAll<HTMLElement>("[data-row]").forEach((cell) => {
-      cell.addEventListener("click", () => {
-        this.selectBoard({
-          row: Number(cell.dataset.row),
-          column: Number(cell.dataset.column),
-        });
-      });
-    });
-
-    this.root.querySelectorAll<HTMLElement>("[data-hand-player]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this.selectHand(button.dataset.handPlayer as Player, Number(button.dataset.handIndex));
-      });
-    });
-
-    this.root.querySelector<HTMLElement>("[data-reset]")?.addEventListener("click", () => this.reset());
+        <aside class="guide"><details ${helpOpen ? "open" : ""}><summary data-focus="help">${escape(m.helpTitle)}</summary>
+          <ol>${m.help.map((text) => `<li>${escape(text)}</li>`).join("")}</ol>
+          <ul class="piece-guide">${Object.entries(m.pieces).map(([kind, name]) => `<li>
+            <span aria-hidden="true">${GLYPHS[kind as PieceKind]}</span><div><strong>${escape(name)}</strong>
+            <p>${escape(m.movement[kind as PieceKind])}</p></div></li>`).join("")}</ul>
+        </details></aside>
+      </div>
+    </main>`;
+    if (focused) {
+      const next = Array.from(this.root.querySelectorAll<HTMLElement>("[data-focus]")).find((element) => element.dataset.focus === focused);
+      (next ?? this.root.querySelector<HTMLElement>("[data-reset]"))?.focus({ preventScroll: true });
+    }
   }
 }

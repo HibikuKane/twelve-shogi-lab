@@ -19,7 +19,7 @@ function stateWith(entries: ReadonlyArray<[number, number, Piece]>): GameState {
     result: { type: "playing" },
     history: [],
     moveNumber: 1,
-    lastEvent: "test",
+    lastEvent: { type: "start", player: "south" },
   };
 }
 
@@ -107,6 +107,7 @@ describe("classic twelve shogi rules", () => {
 
     expect(next.hands.south).toHaveLength(1);
     expect(next.hands.south[0]).toMatchObject({ kind: "chick", owner: "south" });
+    expect(next.lastEvent).toEqual({ type: "move", player: "south", piece: "giraffe", captured: "hen", promoted: false });
   });
 
   it("promotes a chick that reaches the far rank", () => {
@@ -123,6 +124,7 @@ describe("classic twelve shogi rules", () => {
     });
 
     expect(next.board[toIndex({ row: 0, column: 0 })]).toMatchObject({ kind: "hen" });
+    expect(next.lastEvent).toMatchObject({ type: "move", piece: "chick", promoted: true });
   });
 
   it("does not let a lion walk into an attacked square", () => {

@@ -27,6 +27,12 @@ export type GameResult =
   | { readonly type: "win"; readonly winner: Player; readonly reason: "capture" | "try" | "no-actions" }
   | { readonly type: "draw"; readonly reason: "repetition" };
 
+export type GameEvent =
+  | { readonly type: "start"; readonly player: Player }
+  | { readonly type: "move"; readonly player: Player; readonly piece: PieceKind; readonly captured: PieceKind | null; readonly promoted: boolean }
+  | { readonly type: "drop"; readonly player: Player; readonly piece: PieceKind }
+  | Exclude<GameResult, { readonly type: "playing" }>;
+
 export interface GameState {
   readonly board: Board;
   readonly hands: Hands;
@@ -34,7 +40,7 @@ export interface GameState {
   readonly result: GameResult;
   readonly history: ReadonlyArray<string>;
   readonly moveNumber: number;
-  readonly lastEvent: string;
+  readonly lastEvent: GameEvent;
 }
 
 export type Selection =

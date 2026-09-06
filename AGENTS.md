@@ -10,6 +10,9 @@ This repository is a lab for disposable twelve-shogi roguelike experiments.
 - Do not add a UI framework, state library, backend, or asset pipeline without documenting why the current setup blocks the experiment.
 - Prefer data-driven effects to one-off conditionals in UI code.
 - Preserve usable mobile touch targets and keyboard-visible focus states.
+- Keep all in-game copy in `src/i18n/` with matching Korean, Japanese and English entries. Game rules emit typed `GameEvent` data, never localized sentences. Switching locale must preserve the current match and selection.
+- Keep development plans and speculative experiments in documents; only expose functioning player controls and relevant help in-game.
+- Keep future run state (roster, stage, rewards) separate from single-match `GameState`. Early-stage enemies should start with fewer pieces than the player; exact setups are still undecided.
 
 ## Experiments
 
