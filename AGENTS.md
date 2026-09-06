@@ -2,6 +2,23 @@
 
 This repository is a lab for disposable twelve-shogi roguelike experiments.
 
+## Required workflow (effective 2026-09-06)
+
+- Never commit or push directly to `main`, including documentation, fixes, and agent instructions. Previous direct commits were bootstrapping only.
+- Start each purpose-scoped change on a new branch from the current remote `main`; continue an existing task only on its own branch. Open a PR targeting `main`.
+- Before implementation, state the problem, intended player/developer outcome, scope, and observable acceptance checks. A roadmap item is not automatic authorization to implement it.
+- Every PR needs an independent reviewer. Use a separate agent/session or a user-designated human; do not label the implementer's own check as independent review. Review purpose-fit and scope as well as correctness.
+- Record the reviewed code revision, findings, their disposition, and validation evidence in the PR. A change after review requires review of the affected changes before merge.
+- Stop at a reviewable PR unless the user explicitly authorizes its merge. Never treat “implement/push/continue” as merge authorization. Verify the intended head before an authorized merge; do not bypass protection or force-update `main`.
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) for review, merge, CI, and blocked-tool behavior. These rules apply even when repository protection is not configured.
+
+## Start and handoff
+
+- Read [project goals](docs/project-goals.md), [roadmap](docs/roadmap.md), and the current [handoff](docs/handoff.md). Inspect the actual remote branch/PR state before trusting a dated snapshot.
+- For implementation or task handoff, use [twelve-shogi-change](.agents/skills/twelve-shogi-change/SKILL.md). For an independent PR review, use [twelve-shogi-review](.agents/skills/twelve-shogi-review/SKILL.md). If the harness does not discover repository skills automatically, read these files directly.
+- Keep binding rules here, workflow detail in `CONTRIBUTING.md`, goals in `project-goals.md`, priorities in `roadmap.md`, and dated facts in `handoff.md`. Update the relevant source instead of copying the same plan everywhere.
+- At session end, record the branch/PR, what is merged versus proposed, tests actually run, remaining uncertainty, and the next bounded task. Do not infer deployment success from a commit or build.
+
 ## Architecture
 
 - Keep game rules deterministic and independent from the DOM.
