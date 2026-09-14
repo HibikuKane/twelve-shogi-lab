@@ -16,6 +16,7 @@ This repository is a lab for disposable twelve-shogi roguelike experiments.
 
 - Read [project goals](docs/project-goals.md), [roadmap](docs/roadmap.md), and the current [handoff](docs/handoff.md). Inspect the actual remote branch/PR state before trusting a dated snapshot.
 - For implementation or task handoff, use [twelve-shogi-change](.agents/skills/twelve-shogi-change/SKILL.md). For an independent PR review, use [twelve-shogi-review](.agents/skills/twelve-shogi-review/SKILL.md). If the harness does not discover repository skills automatically, read these files directly.
+- Skills live in `.agents/skills/`; `.claude/skills/` is a symlink to it so Claude Code discovers the same files. [CLAUDE.md](CLAUDE.md) only points back here. Add or edit a skill in `.agents/skills/` and never keep a second copy under `.claude/`.
 - Keep binding rules here, workflow detail in `CONTRIBUTING.md`, goals in `project-goals.md`, priorities in `roadmap.md`, and dated facts in `handoff.md`. Update the relevant source instead of copying the same plan everywhere.
 - At session end, record the branch/PR, what is merged versus proposed, tests actually run, remaining uncertainty, and the next bounded task. Do not infer deployment success from a commit or build.
 

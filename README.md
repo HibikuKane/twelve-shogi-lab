@@ -74,7 +74,7 @@ src/i18n/          한·일·영 사전, 언어 선택, 대국 메시지 번역
 src/ui/            브라우저 인터페이스
 tests/             규칙 회귀 테스트
 docs/              질문, 관찰, 폐기 기록
-.agents/skills/    이 저장소의 변경·독립 리뷰 절차
+.agents/skills/    이 저장소의 변경·독립 리뷰 절차 (.claude/skills/는 이 폴더의 심볼릭 링크)
 .github/           PR 템플릿, PR 검증, main 배포
 ```
 
