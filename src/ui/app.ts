@@ -94,12 +94,27 @@ export class LabApp {
     this.thinking = false;
     this.selection = null;
     this.render();
-    this.scheduleAiMove();
   }
 
-  /** Hand the position to the AI, off the current task so the UI can repaint first. */
+  /**
+   * Hand the position to the AI, off the current task so the UI can repaint first.
+   *
+   * This is called at the end of every render rather than from each event
+   * handler. Scheduling from handlers meant every new path had to remember to
+   * do it, and cancelling the restart prompt was a path that did not: the board
+   * stayed locked on the AI's turn with nothing pending. Re-deriving "is the AI
+   * owed a move?" from the state after each render removes that whole class of
+   * missed wake-up.
+   *
+   * Re-entrancy is safe: `thinking` is set before the nested render, so the
+   * render below returns from this method immediately.
+   */
   private scheduleAiMove(): void {
     if (!this.isAiTurn() || this.thinking || this.confirmRestart) return;
+    // Defensive: the ruleset ends the game when a player has no action, so this
+    // should not happen. If it ever did, scheduling a search that returns no
+    // move would re-arm itself from the next render forever.
+    if (this.ruleset.legalActions(this.state).length === 0) return;
     this.thinking = true;
     const token = this.matchToken;
     this.render();
@@ -120,7 +135,6 @@ export class LabApp {
     this.reportSearch(result);
     if (result.action) this.state = this.ruleset.applyAction(this.state, result.action);
     this.render();
-    this.scheduleAiMove();
   }
 
   /** Spec item 21: enough to answer "why did it think that was good?" without UI work. */
@@ -148,7 +162,6 @@ export class LabApp {
       this.state = this.ruleset.applyAction(this.state, action);
       this.selection = null;
       this.render();
-      this.scheduleAiMove();
       return;
     }
     const piece = this.state.board[toIndex(position)];
@@ -189,7 +202,6 @@ export class LabApp {
     this.selection = null;
     this.confirmRestart = false;
     this.render();
-    this.scheduleAiMove();
   }
 
   private resultText(): string {
@@ -301,5 +313,8 @@ export class LabApp {
       const next = Array.from(this.root.querySelectorAll<HTMLElement>("[data-focus]")).find((element) => element.dataset.focus === focused);
       (next ?? this.root.querySelector<HTMLElement>("[data-reset]"))?.focus({ preventScroll: true });
     }
+    // The screen now matches the state, so decide from that state alone whether
+    // the AI still owes a move. No caller has to remember to ask.
+    this.scheduleAiMove();
   }
 }
