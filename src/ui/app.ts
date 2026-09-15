@@ -5,8 +5,8 @@ import {
 } from "../core/model";
 import type { Ruleset } from "../core/ruleset";
 import { classicRuleset } from "../rules/classic";
-import { createStandardOpponent, type SearchResult } from "../ai";
-import { GAME_MODES, isGameMode, type GameMode } from "./mode";
+import { createAiOpponent, standardClassicProfile, type SearchResult } from "../ai";
+import { GAME_MODES, SEARCH_DEPTHS, isGameMode, isSearchDepth, type GameMode } from "./mode";
 import {
   dictionaries, formatEvent, isLocale, loadLocale, localeNames, saveLocale,
   type Locale, type Messages,
@@ -36,6 +36,8 @@ export class LabApp {
   private locale: Locale = loadLocale(navigator.languages, () => window.localStorage);
   private confirmRestart = false;
   private mode: GameMode = "local";
+  /** Provisional development control; see SEARCH_DEPTHS. */
+  private searchDepth = standardClassicProfile.searchDepth;
   private thinking = false;
   /** Bumped whenever the current match or mode changes, so a search that is
    *  already running can tell that its result no longer applies. */
@@ -50,6 +52,11 @@ export class LabApp {
       if (!(select instanceof HTMLSelectElement)) return;
       if (select.id === "mode" && isGameMode(select.value)) {
         this.setMode(select.value);
+        return;
+      }
+      if (select.id === "depth") {
+        const depth = Number(select.value);
+        if (isSearchDepth(depth)) this.setSearchDepth(depth);
         return;
       }
       if (select.id !== "language" || !isLocale(select.value)) return;
@@ -96,6 +103,15 @@ export class LabApp {
     this.render();
   }
 
+  /** Take effect from the AI's next move; the current one is no longer wanted. */
+  private setSearchDepth(depth: number): void {
+    if (depth === this.searchDepth) return;
+    this.searchDepth = depth;
+    this.matchToken += 1;
+    this.thinking = false;
+    this.render();
+  }
+
   /**
    * Hand the position to the AI, off the current task so the UI can repaint first.
    *
@@ -125,7 +141,11 @@ export class LabApp {
     if (token !== this.matchToken) return;
     // Seeding per move keeps tie-breaking varied within a match while a whole
     // match stays reproducible from `aiSeed`.
-    const opponent = createStandardOpponent(this.ruleset, AI_SIDE, this.aiSeed + this.state.moveNumber);
+    const opponent = createAiOpponent(this.ruleset, {
+      profile: { ...standardClassicProfile, searchDepth: this.searchDepth },
+      perspective: AI_SIDE,
+      seed: this.aiSeed + this.state.moveNumber,
+    });
     const result = opponent.chooseMove(this.state);
     // The match may have been restarted or the mode switched while we searched.
     if (token !== this.matchToken) return;
@@ -279,6 +299,10 @@ export class LabApp {
             <select id="mode" data-focus="mode">${GAME_MODES.map((mode) =>
               `<option value="${mode}" ${mode === this.mode ? "selected" : ""}>${escape(m.modes[mode])}</option>`).join("")}</select>
           </div>
+          ${this.mode === "ai" ? `<div class="depth-control"><label for="depth">${escape(m.depthLabel)}</label>
+            <select id="depth" data-focus="depth">${SEARCH_DEPTHS.map((depth) =>
+              `<option value="${depth}" ${depth === this.searchDepth ? "selected" : ""}>${depth}</option>`).join("")}</select>
+          </div>` : ""}
           <div class="language-control"><label for="language">${escape(m.language)}</label>
             <select id="language" data-focus="language">${Object.entries(localeNames).map(([locale, name]) =>
               `<option value="${locale}" lang="${locale}" ${locale === this.locale ? "selected" : ""}>${name}</option>`).join("")}</select>
@@ -301,7 +325,7 @@ export class LabApp {
           <div class="selection-hint" aria-live="polite">${this.state.result.type === "playing" ? this.selectionHint() : `<p>${escape(this.resultText())}</p>`}</div>
         </section>
         <aside class="guide"><details ${helpOpen ? "open" : ""}><summary data-focus="help">${escape(m.helpTitle)}</summary>
-          <ol>${[...m.help, ...(this.mode === "ai" ? [m.aiHelp] : [])]
+          <ol>${[...m.help, ...(this.mode === "ai" ? [m.aiHelp, m.depthHelp] : [])]
             .map((text) => `<li>${escape(text)}</li>`).join("")}</ol>
           <ul class="piece-guide">${Object.entries(m.pieces).map(([kind, name]) => `<li>
             <span aria-hidden="true">${GLYPHS[kind as PieceKind]}</span><div><strong>${escape(name)}</strong>

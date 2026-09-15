@@ -9,6 +9,8 @@ export const ko: Messages = {
   modeAi: "AI 상대 · 북쪽을 AI가 둡니다",
   aiThinking: "AI가 생각하는 중…",
   aiHelp: "AI와 대국에서는 남쪽만 조작합니다. 내 수를 두면 북쪽 AI가 이어서 둡니다. 언제든 대국 방식을 2인 대국으로 바꿔 직접 양쪽을 둘 수 있습니다.",
+  depthLabel: "탐색 깊이",
+  depthHelp: "탐색 깊이는 AI가 몇 수 앞까지 내다볼지 정합니다. 낮출수록 약해지고 응답이 빨라집니다. 강도를 비교해 보기 위한 임시 조절 장치이며, 나중에 난이도 체계로 대체될 예정입니다.",
   language: "언어",
   restart: "새 대국",
   restartQuestion: "진행 중인 대국을 끝내고 새로 시작할까요?",

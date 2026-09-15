@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LabApp } from "../src/ui/app";
+import { standardClassicProfile } from "../src/ai";
 
-function mount(): HTMLElement {
+function mount(): { root: HTMLElement; app: LabApp } {
   const root = document.createElement("div");
   document.body.append(root);
-  new LabApp(root);
+  const app = new LabApp(root);
   // Pin the locale so assertions do not depend on the test environment's languages.
   choose(root, "language", "ko");
-  return root;
+  return { root, app };
 }
 
 function click(root: HTMLElement, selector: string): void {
@@ -53,7 +54,7 @@ describe("AI turn lifecycle in the UI", () => {
   afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ""; });
 
   it("resumes the AI turn after a restart prompt is cancelled", () => {
-    const root = mount();
+    const { root } = mount();
     // Two-player mode: south moves, so it is now north's turn.
     playSouthMove(root);
     expect(turnText(root)).toContain("북쪽");
@@ -72,7 +73,7 @@ describe("AI turn lifecycle in the UI", () => {
   });
 
   it("locks the board while the AI is to move and unlocks it afterwards", () => {
-    const root = mount();
+    const { root } = mount();
     choose(root, "mode", "ai");
     playSouthMove(root);
     expect(playableCells(root)).toBe(0);
@@ -82,7 +83,7 @@ describe("AI turn lifecycle in the UI", () => {
   });
 
   it("does not apply a search started before a restart to the new match", () => {
-    const root = mount();
+    const { root } = mount();
     choose(root, "mode", "ai");
     playSouthMove(root);
     const movesBeforeRestart = turnText(root);
@@ -97,10 +98,59 @@ describe("AI turn lifecycle in the UI", () => {
   });
 
   it("keeps the two-player baseline working with no AI involvement", () => {
-    const root = mount();
+    const { root } = mount();
     playSouthMove(root);
     vi.runAllTimers();
     expect(turnText(root)).toContain("북쪽");
     expect(playableCells(root)).toBeGreaterThan(0);
+  });
+});
+
+describe("search depth control", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ""; });
+
+  it("is offered only while playing the AI", () => {
+    const { root } = mount();
+    expect(root.querySelector("#depth")).toBeNull();
+    choose(root, "mode", "ai");
+    expect(root.querySelector("#depth")).not.toBeNull();
+    choose(root, "mode", "local");
+    expect(root.querySelector("#depth")).toBeNull();
+  });
+
+  it("defaults to the standard profile's depth", () => {
+    const { root, app } = mount();
+    choose(root, "mode", "ai");
+    expect(root.querySelector<HTMLSelectElement>("#depth")?.value)
+      .toBe(String(standardClassicProfile.searchDepth));
+    playSouthMove(root);
+    vi.runAllTimers();
+    expect(app.lastAiSearch?.depth).toBe(standardClassicProfile.searchDepth);
+  });
+
+  it("makes the AI search at the chosen depth", () => {
+    const { root, app } = mount();
+    choose(root, "mode", "ai");
+    choose(root, "depth", "1");
+    playSouthMove(root);
+    vi.runAllTimers();
+    expect(app.lastAiSearch?.depth).toBe(1);
+
+    choose(root, "depth", "3");
+    playSouthMove(root);
+    vi.runAllTimers();
+    expect(app.lastAiSearch?.depth).toBe(3);
+  });
+
+  it("discards a search that was already running at the old depth", () => {
+    const { root, app } = mount();
+    choose(root, "mode", "ai");
+    playSouthMove(root);
+    // The depth 4 search is scheduled but has not run yet.
+    choose(root, "depth", "2");
+    vi.runAllTimers();
+    expect(app.lastAiSearch?.depth).toBe(2);
+    expect(turnText(root)).toContain("남쪽");
   });
 });
