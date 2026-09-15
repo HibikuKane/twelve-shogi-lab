@@ -21,8 +21,10 @@ button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px
 .brand { color: var(--accent); font-size: .65rem; letter-spacing: .17em; font-weight: 800; margin: 0 0 8px; }
 h1 { margin: 0; font-size: clamp(1.5rem, 4.5vw, 2.3rem); line-height: 1.25; letter-spacing: -.03em; }
 .mode { color: var(--muted); margin: 7px 0 0; font-size: .82rem; }
-.language-control { display: flex; align-items: center; gap: 10px; font-size: .8rem; }
-.language-control label { color: var(--muted); }
+.topbar__controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; }
+.language-control, .mode-control { display: flex; align-items: center; gap: 10px; font-size: .8rem; }
+.language-control label, .mode-control label { color: var(--muted); }
+.game__thinking { color: var(--muted); margin: 6px 0 0; font-size: .82rem; }
 select { min-height: 44px; padding: 8px 28px 8px 12px; border: 1px solid var(--line); background: #20291f; border-radius: 8px; }
 .play-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, .85fr); align-items: start; gap: 24px; }
 .game { min-width: 0; display: grid; justify-items: center; gap: 14px; padding: 22px; background: #1a2119; border: 1px solid var(--line); border-radius: 16px; }

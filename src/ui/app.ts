@@ -5,10 +5,19 @@ import {
 } from "../core/model";
 import type { Ruleset } from "../core/ruleset";
 import { classicRuleset } from "../rules/classic";
+import { createStandardOpponent, type SearchResult } from "../ai";
+import { GAME_MODES, isGameMode, type GameMode } from "./mode";
 import {
   dictionaries, formatEvent, isLocale, loadLocale, localeNames, saveLocale,
   type Locale, type Messages,
 } from "../i18n";
+
+/** The AI always plays north; south stays the human seat in both modes. */
+const AI_SIDE: Player = "north";
+
+/** Let the "thinking" line paint before the search blocks the main thread,
+ *  and keep the reply from feeling instantaneous. */
+const AI_THINK_DELAY_MS = 120;
 
 const GLYPHS: Record<PieceKind, string> = {
   lion: "🦁", giraffe: "🦒", elephant: "🐘", chick: "🐣", hen: "🐔",
@@ -26,12 +35,25 @@ export class LabApp {
   private selection: Selection | null = null;
   private locale: Locale = loadLocale(navigator.languages, () => window.localStorage);
   private confirmRestart = false;
+  private mode: GameMode = "local";
+  private thinking = false;
+  /** Bumped whenever the current match or mode changes, so a search that is
+   *  already running can tell that its result no longer applies. */
+  private matchToken = 0;
+  private aiSeed = Date.now();
+  private lastSearch: SearchResult | null = null;
 
   constructor(private readonly root: HTMLElement) {
     this.root.addEventListener("click", (event) => this.handleClick(event));
     this.root.addEventListener("change", (event) => {
       const select = event.target;
-      if (!(select instanceof HTMLSelectElement) || select.id !== "language" || !isLocale(select.value)) return;
+      if (!(select instanceof HTMLSelectElement)) return;
+      if (select.id === "mode" && isGameMode(select.value)) {
+        this.setMode(select.value);
+        return;
+      }
+      if (select.id !== "language" || !isLocale(select.value)) return;
+      // Language is presentation only: it must never disturb the match or a running search.
       this.locale = select.value;
       saveLocale(this.locale, () => window.localStorage);
       this.render();
@@ -40,6 +62,9 @@ export class LabApp {
   }
 
   private get messages(): Messages { return dictionaries[this.locale]; }
+
+  /** Last AI decision, exposed for debugging and future profile balancing. */
+  get lastAiSearch(): SearchResult | null { return this.lastSearch; }
 
   private selectedActions(): ReadonlyArray<GameAction> {
     const selection = this.selection;
@@ -51,16 +76,83 @@ export class LabApp {
     });
   }
 
+  /** True while the human must not touch the board: the AI is to move, or is thinking. */
+  private get locked(): boolean {
+    return this.thinking || this.isAiTurn();
+  }
+
+  private isAiTurn(): boolean {
+    return this.mode === "ai" && this.state.result.type === "playing" && this.state.turn === AI_SIDE;
+  }
+
+  private setMode(mode: GameMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    // Discard any in-flight search; the board itself is deliberately kept so
+    // switching modes never throws away a game in progress.
+    this.matchToken += 1;
+    this.thinking = false;
+    this.selection = null;
+    this.render();
+    this.scheduleAiMove();
+  }
+
+  /** Hand the position to the AI, off the current task so the UI can repaint first. */
+  private scheduleAiMove(): void {
+    if (!this.isAiTurn() || this.thinking || this.confirmRestart) return;
+    this.thinking = true;
+    const token = this.matchToken;
+    this.render();
+    window.setTimeout(() => this.playAiMove(token), AI_THINK_DELAY_MS);
+  }
+
+  private playAiMove(token: number): void {
+    if (token !== this.matchToken) return;
+    // Seeding per move keeps tie-breaking varied within a match while a whole
+    // match stays reproducible from `aiSeed`.
+    const opponent = createStandardOpponent(this.ruleset, AI_SIDE, this.aiSeed + this.state.moveNumber);
+    const result = opponent.chooseMove(this.state);
+    // The match may have been restarted or the mode switched while we searched.
+    if (token !== this.matchToken) return;
+
+    this.thinking = false;
+    this.lastSearch = result;
+    this.reportSearch(result);
+    if (result.action) this.state = this.ruleset.applyAction(this.state, result.action);
+    this.render();
+    this.scheduleAiMove();
+  }
+
+  /** Spec item 21: enough to answer "why did it think that was good?" without UI work. */
+  private reportSearch(result: SearchResult): void {
+    const chosen = result.action
+      ? result.action.type === "move"
+        ? `${result.action.from.row},${result.action.from.column} -> ${result.action.to.row},${result.action.to.column}`
+        : `drop -> ${result.action.to.row},${result.action.to.column}`
+      : "none";
+    console.debug("[ai]", {
+      move: chosen, score: result.score, depth: result.depth,
+      nodes: result.nodes, elapsedMs: result.elapsedMs,
+      evaluation: result.breakdown && {
+        material: result.breakdown.material, mobility: result.breakdown.mobility,
+        boardControl: result.breakdown.boardControl, lionSafety: result.breakdown.lionSafety,
+        tryProgress: result.breakdown.tryProgress, total: result.breakdown.total,
+      },
+    });
+  }
+
   private selectBoard(position: Position): void {
-    if (this.state.result.type !== "playing" || this.confirmRestart) return;
+    if (this.state.result.type !== "playing" || this.confirmRestart || this.locked) return;
     const action = this.selectedActions().find((candidate) => samePosition(candidate.to, position));
     if (action) {
       this.state = this.ruleset.applyAction(this.state, action);
       this.selection = null;
-    } else {
-      const piece = this.state.board[toIndex(position)];
-      this.selection = piece?.owner === this.state.turn ? { type: "board", position } : null;
+      this.render();
+      this.scheduleAiMove();
+      return;
     }
+    const piece = this.state.board[toIndex(position)];
+    this.selection = piece?.owner === this.state.turn ? { type: "board", position } : null;
     this.render();
   }
 
@@ -79,7 +171,7 @@ export class LabApp {
       this.render();
     } else if (button.dataset.cell !== undefined) {
       this.selectBoard(fromIndex(Number(button.dataset.cell)));
-    } else if (button.dataset.handPlayer && !this.confirmRestart && this.state.result.type === "playing") {
+    } else if (button.dataset.handPlayer && !this.confirmRestart && !this.locked && this.state.result.type === "playing") {
       const player = button.dataset.handPlayer as Player;
       if (player !== this.state.turn) return;
       this.selection = { type: "hand", player, index: Number(button.dataset.handIndex) };
@@ -88,10 +180,16 @@ export class LabApp {
   }
 
   private reset(): void {
+    // Invalidate any search still running against the previous match.
+    this.matchToken += 1;
+    this.thinking = false;
+    this.lastSearch = null;
+    this.aiSeed = Date.now();
     this.state = this.ruleset.createInitialState();
     this.selection = null;
     this.confirmRestart = false;
     this.render();
+    this.scheduleAiMove();
   }
 
   private resultText(): string {
@@ -114,7 +212,8 @@ export class LabApp {
     const label = m.hand(m.sides[player]);
     const content = this.state.hands[player].map((piece, index) => {
       const selected = this.selection?.type === "hand" && this.selection.player === player && this.selection.index === index;
-      const disabled = player !== this.state.turn || this.state.result.type !== "playing" || this.confirmRestart;
+      const disabled = player !== this.state.turn || this.state.result.type !== "playing"
+        || this.confirmRestart || this.locked;
       return `<button class="hand-piece${selected ? " is-selected" : ""}"
         data-hand-player="${player}" data-hand-index="${index}" data-focus="hand-${player}-${index}"
         aria-label="${escape(m.place(m.pieces[piece.kind]))}" aria-pressed="${selected}" ${disabled ? "disabled" : ""}>
@@ -135,7 +234,7 @@ export class LabApp {
       const label = m.square(position.row + 1, position.column + 1, occupant, legal);
       return `<button class="board__cell${selected ? " is-selected" : ""}${legal ? " is-legal" : ""}${legal && piece ? " is-capture" : ""}"
         data-cell="${index}" data-focus="cell-${index}" aria-label="${escape(label)}" aria-pressed="${Boolean(selected)}"
-        ${this.confirmRestart || this.state.result.type !== "playing" ? "disabled" : ""}>
+        ${this.confirmRestart || this.state.result.type !== "playing" || this.locked ? "disabled" : ""}>
         ${piece ? this.pieceMarkup(piece) : ""}</button>`;
     }).join("");
     return `<div class="board" role="group" aria-label="${escape(m.boardLabel)}">${cells}</div>`;
@@ -162,10 +261,16 @@ export class LabApp {
     document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute("content", m.description);
     this.root.innerHTML = `<main class="shell">
       <header class="topbar">
-        <div><p class="brand">TWELVE SHOGI LAB</p><h1>${escape(m.title)}</h1><p class="mode">${escape(m.mode)}</p></div>
-        <div class="language-control"><label for="language">${escape(m.language)}</label>
-          <select id="language" data-focus="language">${Object.entries(localeNames).map(([locale, name]) =>
-            `<option value="${locale}" lang="${locale}" ${locale === this.locale ? "selected" : ""}>${name}</option>`).join("")}</select>
+        <div><p class="brand">TWELVE SHOGI LAB</p><h1>${escape(m.title)}</h1><p class="mode">${escape(this.mode === "ai" ? m.modeAi : m.mode)}</p></div>
+        <div class="topbar__controls">
+          <div class="mode-control"><label for="mode">${escape(m.modeLabel)}</label>
+            <select id="mode" data-focus="mode">${GAME_MODES.map((mode) =>
+              `<option value="${mode}" ${mode === this.mode ? "selected" : ""}>${escape(m.modes[mode])}</option>`).join("")}</select>
+          </div>
+          <div class="language-control"><label for="language">${escape(m.language)}</label>
+            <select id="language" data-focus="language">${Object.entries(localeNames).map(([locale, name]) =>
+              `<option value="${locale}" lang="${locale}" ${locale === this.locale ? "selected" : ""}>${name}</option>`).join("")}</select>
+          </div>
         </div>
       </header>
       <div class="play-layout">
@@ -173,6 +278,7 @@ export class LabApp {
           <div class="game__status"><div role="status" aria-live="polite" aria-atomic="true">
             <h2 class="game__turn">${escape(this.resultText())}</h2>
             <p class="game__event">${escape(formatEvent(this.state.lastEvent, m))}</p>
+            ${this.thinking ? `<p class="game__thinking">${escape(m.aiThinking)}</p>` : ""}
           </div><button class="reset-button" data-reset data-focus="reset">${escape(m.restart)}</button></div>
           ${this.confirmRestart ? `<section class="restart-prompt" aria-label="${escape(m.restartQuestion)}">
             <p>${escape(m.restartQuestion)}</p><div>
@@ -183,7 +289,8 @@ export class LabApp {
           <div class="selection-hint" aria-live="polite">${this.state.result.type === "playing" ? this.selectionHint() : `<p>${escape(this.resultText())}</p>`}</div>
         </section>
         <aside class="guide"><details ${helpOpen ? "open" : ""}><summary data-focus="help">${escape(m.helpTitle)}</summary>
-          <ol>${m.help.map((text) => `<li>${escape(text)}</li>`).join("")}</ol>
+          <ol>${[...m.help, ...(this.mode === "ai" ? [m.aiHelp] : [])]
+            .map((text) => `<li>${escape(text)}</li>`).join("")}</ol>
           <ul class="piece-guide">${Object.entries(m.pieces).map(([kind, name]) => `<li>
             <span aria-hidden="true">${GLYPHS[kind as PieceKind]}</span><div><strong>${escape(name)}</strong>
             <p>${escape(m.movement[kind as PieceKind])}</p></div></li>`).join("")}</ul>

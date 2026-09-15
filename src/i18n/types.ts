@@ -1,4 +1,5 @@
 import type { PieceKind, Player } from "../core/model";
+import type { GameMode } from "../ui/mode";
 
 export type Locale = "ko" | "ja" | "en";
 
@@ -7,6 +8,11 @@ export interface Messages {
   title: string;
   description: string;
   mode: string;
+  modeLabel: string;
+  modes: Record<GameMode, string>;
+  modeAi: string;
+  aiThinking: string;
+  aiHelp: string;
   language: string;
   restart: string;
   restartQuestion: string;
