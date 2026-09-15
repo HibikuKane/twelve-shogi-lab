@@ -11,9 +11,9 @@ export function isGameMode(value: unknown): value is GameMode {
  *
  * This is a provisional development control, not the difficulty system. It
  * exists so the AI's strength can be observed and compared during balancing;
- * a real difficulty model is expected to replace it. Measured strength at the
- * time it was added: at equal depth the deeper side won every game, and depth
- * 1 and 2 opponents lost 20-0 to a depth 4 one.
+ * a real difficulty model is expected to replace it. Measured when it was
+ * added, 20 games per pairing: a depth 4 opponent beat depth 2 and depth 1
+ * by 20-0 each, playing either colour.
  */
 export const SEARCH_DEPTHS: ReadonlyArray<number> = [1, 2, 3, 4];
 
