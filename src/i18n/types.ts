@@ -13,6 +13,8 @@ export interface Messages {
   modeAi: string;
   aiThinking: string;
   aiHelp: string;
+  depthLabel: string;
+  depthHelp: string;
   language: string;
   restart: string;
   restartQuestion: string;

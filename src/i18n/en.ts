@@ -9,6 +9,8 @@ export const en: Messages = {
   modeAi: "Versus AI · North is played by the AI",
   aiThinking: "The AI is thinking…",
   aiHelp: "Against the AI you control South only; the AI answers as North after each of your moves. Switch the game mode back to two players at any time to play both sides yourself.",
+  depthLabel: "Search depth",
+  depthHelp: "Search depth is how many moves ahead the AI looks. Lower is weaker and answers faster. This is a provisional control for comparing strength; a difficulty system will replace it later.",
   language: "Language",
   restart: "New game",
   restartQuestion: "End this game and start a new one?",
