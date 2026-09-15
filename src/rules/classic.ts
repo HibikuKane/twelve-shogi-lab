@@ -14,7 +14,7 @@ import {
   type Player,
   type Position,
 } from "../core/model";
-import type { Ruleset } from "../core/ruleset";
+import type { PositionAnalysis, Ruleset } from "../core/ruleset";
 
 type Vector = readonly [row: number, column: number];
 
@@ -167,6 +167,35 @@ function legalActionsForPlayer(state: GameState, player: Player): ReadonlyArray<
   return actions;
 }
 
+/**
+ * Squares `attacker` could move a piece onto next turn, ignoring whether the
+ * move would expose their own lion. Shared with evaluation code so that piece
+ * movement stays defined only by SOUTH_VECTORS.
+ */
+export function attackedSquares(board: Board, attacker: Player): ReadonlySet<number> {
+  const squares = new Set<number>();
+  board.forEach((candidate, index) => {
+    if (!candidate || candidate.owner !== attacker) return;
+    const origin = fromIndex(index);
+    vectorsFor(candidate.kind, attacker).forEach(([row, column]) => {
+      const target = { row: origin.row + row, column: origin.column + column };
+      if (isInsideBoard(target)) squares.add(toIndex(target));
+    });
+  });
+  return squares;
+}
+
+export function lionSquare(board: Board, owner: Player): number | null {
+  const lion = findLion(board, owner);
+  return lion === null ? null : toIndex(lion);
+}
+
+export const classicAnalysis: PositionAnalysis = {
+  attackedSquares,
+  lionSquare,
+  tryRank: farRank,
+};
+
 export function positionKey(state: Pick<GameState, "board" | "hands" | "turn">): string {
   const board = state.board
     .map((candidate) => candidate ? `${candidate.owner[0]}:${candidate.kind}` : "_")
@@ -270,6 +299,7 @@ export const classicRuleset: Ruleset = {
   id: "classic",
   name: "Experiment 00 · 원형",
   summary: "로그라이크 변형을 비교하기 위한, 작동하는 십이장기 기준점.",
+  analysis: classicAnalysis,
   createInitialState: createClassicState,
   legalActions: legalClassicActions,
   applyAction: applyClassicAction,

@@ -4,6 +4,8 @@ export const BOARD_COLUMNS = 3;
 export type Player = "north" | "south";
 export type PieceKind = "lion" | "giraffe" | "elephant" | "chick" | "hen";
 
+export const PIECE_KINDS: ReadonlyArray<PieceKind> = ["lion", "giraffe", "elephant", "chick", "hen"];
+
 export interface Piece {
   readonly id: string;
   readonly kind: PieceKind;
